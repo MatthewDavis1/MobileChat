@@ -8,11 +8,13 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var settings = Settings()
     @State private var bot: ChatBot? = nil
     @State private var messages: [Message] = []
     @State private var inputText = ""
     @State private var progress: CGFloat = 0
     @State private var isLoading = false
+    @State private var showingSettings = false
     
     func updateProgress(_ progress: Double) {
         self.progress = CGFloat(progress)
@@ -37,47 +39,115 @@ struct ContentView: View {
         }
     }
     
+    func loadModel() async {
+        bot = await ChatBot(modelType: settings.selectedModel, updateProgress)
+    }
+    
     var body: some View {
-        if let bot {
-            VStack {
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(messages) { message in
-                            MessageBubble(message: message)
+        Group {
+            if bot != nil {
+                NavigationView {
+                    VStack {
+                        ScrollView {
+                            LazyVStack(spacing: 12) {
+                                ForEach(messages) { message in
+                                    MessageBubble(message: message)
+                                }
+                                if isLoading {
+                                    ProgressView()
+                                        .padding()
+                                }
+                            }
+                            .padding()
                         }
-                        if isLoading {
-                            ProgressView()
-                                .padding()
+                        
+                        HStack {
+                            TextField("Type a message...", text: $inputText)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .disabled(isLoading)
+                            
+                            Button(action: sendMessage) {
+                                Image(systemName: "paperplane.fill")
+                            }
+                            .disabled(isLoading || inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
+                        .padding()
+                    }
+                    .navigationTitle("MobileChat")
+                    .toolbar {
+                        Button(action: { showingSettings = true }) {
+                            Image(systemName: "gear")
+                        }
+                    }
+                    .sheet(isPresented: $showingSettings) {
+                        SettingsView(settings: settings) {
+                            // Reset chat when model changes
+                            messages = []
+                            bot = nil
+                            Task {
+                                await loadModel()
+                            }
+                        }
+                    }
+                }
+            } else {
+                VStack {
+                    Text("Loading AI Model...")
+                    Text(settings.selectedModel.rawValue)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    ProgressView(value: progress) {
+                        Text(String(format: "%.1f%%", progress * 100))
                     }
                     .padding()
                 }
-                
-                HStack {
-                    TextField("Type a message...", text: $inputText)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .disabled(isLoading)
-                    
-                    Button(action: sendMessage) {
-                        Image(systemName: "paperplane.fill")
+                .onAppear {
+                    Task {
+                        await loadModel()
                     }
-                    .disabled(isLoading || inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .padding()
-            }
-        } else {
-            VStack {
-                Text("Loading AI Model...")
-                ProgressView(value: progress) {
-                    Text(String(format: "%.1f%%", progress * 100))
-                }
-                .padding()
-            }
-            .onAppear {
-                Task {
-                    bot = await ChatBot(updateProgress)
                 }
             }
+        }
+    }
+}
+
+struct SettingsView: View {
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var settings: Settings
+    let onModelChange: () -> Void
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Model Selection")) {
+                    Picker("Model", selection: $settings.selectedModel) {
+                        ForEach(ModelType.allCases, id: \.self) { model in
+                            Text(model.rawValue).tag(model)
+                        }
+                    }
+                    .onChange(of: settings.selectedModel) { _ in
+                        dismiss()
+                        onModelChange()
+                    }
+                }
+                
+                Section(header: Text("About")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Smollm (135M)")
+                            .font(.headline)
+                        Text("Smaller, faster model suitable for most tasks")
+                            .font(.caption)
+                        
+                        Text("TinyLlama (1.1B)")
+                            .font(.headline)
+                        Text("Larger model with better comprehension but slower responses")
+                            .font(.caption)
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarItems(trailing: Button("Done") { dismiss() })
         }
     }
 }
@@ -103,3 +173,5 @@ struct MessageBubble: View {
 #Preview {
     ContentView()
 }
+
+
