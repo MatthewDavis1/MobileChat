@@ -37,13 +37,6 @@ class ChatBot: LLM {
     static let systemPrompt = "You are a helpful and friendly AI assistant. Keep your responses concise and engaging."
     
     convenience init?(modelType: ModelType, _ update: @escaping (Double) -> Void) async {
-        // First check if we have a cached model
-        if let cachedModelURL = Bundle.main.url(forResource: modelType.fileName, withExtension: "gguf") {
-            self.init(from: cachedModelURL, template: .chatML(Self.systemPrompt))
-            return
-        }
-        
-        // If no cached model, download from HuggingFace
         let model = HuggingFaceModel(modelType.modelName, modelType.quantization, template: .chatML(Self.systemPrompt))
         try? await self.init(from: model) { progress in update(progress) }
     }
